@@ -1,6 +1,7 @@
 const request = require("request");
 const fs = require('fs');
 const { stringify } = require("csv-stringify");
+const requestPromise = require("request-promise-native");
 
 const key = "d0c6a9ae98ef39ac2ecc8bc7d040d205"
 const journalid = "11443"
@@ -19,16 +20,28 @@ articles = []
 volumes = []
 count = 0
 
+async function downloadPDF(pdfURL, dirPath, fileName) {
+    if (!fs.existsSync(dirPath)){
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+    let pdfBuffer = await requestPromise.get({uri: pdfURL, encoding: null});
+    const outputFilename = dirPath + fileName
+    console.log("Writing downloaded PDF file to " + outputFilename);
+    fs.writeFileSync(outputFilename, pdfBuffer);
+}
+
 function getAPI (url) {
     return new Promise((resolve, reject) => {
         json = null        
         request.get(url, async(error, response, body) => {
             json = JSON.parse(body);
 
+            //console.log(json)
+
             if (json && json['result']) {
 
                 const recordCnt = json['result']['recordsDisplayed']
-                const records = json['records']                
+                const records = json['records']
         
                 records.forEach(record => {
         
@@ -44,7 +57,20 @@ function getAPI (url) {
                         const mIssue = 'Issue ' + record['number']
                         const mTitle = record['title']
                         const mDoi = record['doi']
+                        const convertedDoi = mDoi.replace('/', '_')
                         const mPublicationDate = record['publicationDate']
+                        const mLiterature = `${publisher}, ${mVolume}, ${mIssue}, Published ${mPublicationDate}, Pages ${record['startingPage']}-${record['endingPage']}`
+
+                        var mPdfURL = ''
+                        if (record['openaccess']==='true') {      // IF Free PDF                      
+                            record['url'].forEach(item => {
+                                if (item['format']==='pdf') {
+                                    mPdfURL = item['value']
+
+                                    downloadPDF(mPdfURL, `${dirPath}${mVolume}/${mIssue}/`,`${convertedDoi}.pdf`)
+                                }
+                            })
+                        }
                         var mSection = ''
                         if(Array.isArray(record['genre'])) {
                             record['genre'].forEach((item, index) => {
@@ -86,9 +112,9 @@ function getAPI (url) {
                             'Section': mSection,
                             'Article Title': mTitle,
                             'Author(s)': mCreators,
-                            'Literature': '',
+                            'Literature': mLiterature,
                             'DOI': mDoi,
-                            'PdfURL': '',
+                            'PdfURL': mPdfURL,
                             'Download': ''
                         }
 
